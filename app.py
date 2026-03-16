@@ -1,348 +1,96 @@
+import os
 import streamlit as st
-import tempfile
-
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-
-from langchain_huggingface import HuggingFaceEmbeddings
-from langchain_community.vectorstores import Chroma
-
+from langchain.embeddings import HuggingFaceEmbeddings
+from langchain.vectorstores import Chroma
 from langchain_groq import ChatGroq
-from langchain_core.prompts import ChatPromptTemplate
-from langchain_core.output_parsers import StrOutputParser
-
+from langchain.chains import ConversationalRetrievalChain
 from langchain_community.tools import DuckDuckGoSearchResults
 
+# -------------------------------
+# SETTINGS
+# -------------------------------
+st.set_page_config(page_title="Multi-PDF & Web Chatbot", layout="wide")
+st.title("📄 Multi-PDF & Web Chatbot with Groq & LangChain")
 
-# -----------------------------
-# PAGE CONFIG
-# -----------------------------
+# -------------------------------
+# USE API KEYS FROM SECRETS
+# -------------------------------
+# Groq API key from Streamlit secrets (not sidebar)
+GROQ_API_KEY = st.secrets.get("GROQ_API_KEY", "")
+if not GROQ_API_KEY:
+    st.error("Groq API key not found in secrets! Please add it.")
+    st.stop()
 
-st.set_page_config(page_title="AI Research Assistant")
-st.title("AI Research Assistant")
+# Initialize Groq client
+chat_groq = ChatGroq(api_key=GROQ_API_KEY)
 
-
-# -----------------------------
-# LOAD GROQ KEY FROM SECRETS
-# -----------------------------
-
-groq_api_key = st.secrets["GROQ_API_KEY"]
-
-
-# -----------------------------
-# FILE UPLOAD
-# -----------------------------
-
-uploaded_files = st.file_uploader(
-    "Upload PDF files",
-    type="pdf",
-    accept_multiple_files=True,
-    key="pdf_uploader"
-)
-
-
-# -----------------------------
-# USER QUESTION
-# -----------------------------
-
-query = st.text_input(
-    "Ask a question",
-    key="query_input"
-)
-
-
-# -----------------------------
-# LOAD EMBEDDINGS
-# -----------------------------
-
-@st.cache_resource
-def load_embeddings():
-    return HuggingFaceEmbeddings(
-        model_name="sentence-transformers/all-MiniLM-L6-v2"
-    )
-
-
-# -----------------------------
-# BUILD VECTOR DATABASE
-# -----------------------------
-
-@st.cache_resource
-def build_vector_db(files):
-
-    embeddings = load_embeddings()
-    all_docs = []
-
-    for file in files:
-
-        with tempfile.NamedTemporaryFile(delete=False) as tmp:
-            tmp.write(file.read())
-            tmp_path = tmp.name
-
-        loader = PyPDFLoader(tmp_path)
-        docs = loader.load()
-
-        all_docs.extend(docs)
-
-    splitter = RecursiveCharacterTextSplitter(
-        chunk_size=1000,
-        chunk_overlap=200
-    )
-
-    documents = splitter.split_documents(all_docs)
-
-    vector_db = Chroma.from_documents(
-        documents,
-        embeddings
-    )
-
-    return vector_db
-
-
-# -----------------------------
-# WEB SEARCH TOOL
-# -----------------------------
-
-search_tool = DuckDuckGoSearchResults()
-
-
-# -----------------------------
-# RUN QUERY
-# -----------------------------
-
-if query:
-
-    llm = ChatGroq(
-        groq_api_key=groq_api_key,
-        model_name="llama3-8b-8192"
-    )
-
-    context = ""
-
-    # -----------------------------
-    # PDF SEARCH
-    # -----------------------------
-
-    if uploaded_files:
-
-        with st.spinner("Processing PDFs..."):
-
-            vector_db = build_vector_db(uploaded_files)
-
-            retriever = vector_db.as_retriever()
-
-            docs = retriever.invoke(query)
-
-            pdf_context = "\n\n".join([d.page_content for d in docs])
-
-            context += pdf_context
-
-
-    # -----------------------------
-    # WEB SEARCH
-    # -----------------------------
-
-    with st.spinner("Searching web..."):
-
-        web_results = search_tool.run(query)
-
-        context += "\n\nWeb Results:\n" + web_results
-
-
-    # -----------------------------
-    # PROMPT
-    # -----------------------------
-
-    prompt = ChatPromptTemplate.from_template(
-        """
-You are an AI research assistant.
-
-Use the context below to answer the question.
-
-Context:
-{context}
-
-Question:
-{question}
-
-Give a clear helpful answer.
-"""
-    )
-
-
-    chain = prompt | llm | StrOutputParser()
-
-    response = chain.invoke({
-        "context": context,
-        "question": query
-    })
-
-
-    # -----------------------------
-    # OUTPUT
-    # -----------------------------
-
-    st.subheader("Answer")
-    st.write(response)
-
-# -----------------------------
+# -------------------------------
 # FILE UPLOADER
-# -----------------------------
-
+# -------------------------------
 uploaded_files = st.file_uploader(
     "Upload PDF files",
     type="pdf",
-    accept_multiple_files=True,
-    key="pdf_uploader"
+    accept_multiple_files=True
 )
 
+docs = []
+if uploaded_files:
+    for uploaded_file in uploaded_files:
+        loader = PyPDFLoader(uploaded_file)
+        docs.extend(loader.load())
+    st.success(f"Loaded {len(docs)} pages from {len(uploaded_files)} PDF(s).")
 
-# -----------------------------
-# USER QUESTION
-# -----------------------------
+# -------------------------------
+# WEB SEARCH OPTION
+# -------------------------------
+use_web_search = st.checkbox("Enable Web Search", value=False)
 
-query = st.text_input(
-    "Ask a question",
-    key="query_input"
+# -------------------------------
+# TEXT SPLITTING
+# -------------------------------
+splitter = RecursiveCharacterTextSplitter(
+    chunk_size=500,
+    chunk_overlap=50
 )
 
+if docs:
+    split_docs = splitter.split_documents(docs)
+else:
+    split_docs = []
 
-# -----------------------------
-# LOAD EMBEDDINGS
-# -----------------------------
-
-@st.cache_resource
-def load_embeddings():
-    return HuggingFaceEmbeddings(
-        model_name="sentence-transformers/all-MiniLM-L6-v2"
-    )
-
-
-# -----------------------------
-# BUILD VECTOR DATABASE
-# -----------------------------
-
-@st.cache_resource
-def build_vector_db(files):
-
-    embeddings = load_embeddings()
-
-    all_docs = []
-
-    for file in files:
-
-        with tempfile.NamedTemporaryFile(delete=False) as tmp:
-            tmp.write(file.read())
-            tmp_path = tmp.name
-
-        loader = PyPDFLoader(tmp_path)
-        docs = loader.load()
-
-        all_docs.extend(docs)
-
-    # TEXT SPLITTING
-    splitter = RecursiveCharacterTextSplitter(
-        chunk_size=1000,
-        chunk_overlap=200
-    )
-
-    documents = splitter.split_documents(all_docs)
-
-    # VECTOR DATABASE
+# -------------------------------
+# VECTOR DB / EMBEDDINGS
+# -------------------------------
+vector_db = None
+if split_docs:
+    embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
     vector_db = Chroma.from_documents(
-        documents,
-        embeddings
+        split_docs,
+        embedding=embeddings
     )
 
-    return vector_db
-
-
-# -----------------------------
-# WEB SEARCH TOOL
-# -----------------------------
-
-search_tool = DuckDuckGoSearchResults()
-
-
-# -----------------------------
-# RUN QUERY
-# -----------------------------
+# -------------------------------
+# QUERY INPUT
+# -------------------------------
+query = st.text_input("Ask a question")  # No duplicate key
 
 if query:
+    results_text = ""
+    # 1️⃣ PDF Retrieval
+    if vector_db:
+        retrieval_chain = ConversationalRetrievalChain.from_llm(
+            llm=chat_groq,
+            retriever=vector_db.as_retriever()
+        )
+        response = retrieval_chain.run(query)
+        results_text += f"**From PDFs:** {response}\n\n"
 
-    if not groq_api_key:
-        st.warning("Please enter Groq API key in sidebar")
-        st.stop()
+    # 2️⃣ Web Search
+    if use_web_search:
+        search_tool = DuckDuckGoSearchResults()
+        search_results = search_tool.run(query)
+        results_text += f"**From Web Search:** {search_results}\n\n"
 
-    llm = ChatGroq(
-        groq_api_key=groq_api_key,
-        model_name="llama3-8b-8192"
-    )
-
-    context = ""
-
-    # -----------------------------
-    # PDF SEARCH
-    # -----------------------------
-
-    if uploaded_files:
-
-        with st.spinner("Processing PDFs..."):
-
-            vector_db = build_vector_db(uploaded_files)
-
-            retriever = vector_db.as_retriever()
-
-            docs = retriever.invoke(query)
-
-            pdf_context = "\n\n".join([d.page_content for d in docs])
-
-            context += pdf_context
-
-
-    # -----------------------------
-    # WEB SEARCH
-    # -----------------------------
-
-    with st.spinner("Searching web..."):
-
-        web_results = search_tool.run(query)
-
-        context += "\n\nWeb Results:\n" + web_results
-
-
-    # -----------------------------
-    # PROMPT
-    # -----------------------------
-
-    prompt = ChatPromptTemplate.from_template(
-        """
-You are an AI research assistant.
-
-Use the context below to answer the question.
-
-Context:
-{context}
-
-Question:
-{question}
-
-Give a clear helpful answer.
-"""
-    )
-
-
-    chain = prompt | llm | StrOutputParser()
-
-    response = chain.invoke({
-        "context": context,
-        "question": query
-    })
-
-
-    # -----------------------------
-    # OUTPUT
-    # -----------------------------
-
-    st.subheader("Answer")
-
-    st.write(response)
+    st.markdown(results_text or "No results found.")
