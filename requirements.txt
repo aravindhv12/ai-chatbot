@@ -5,11 +5,9 @@ langchain-core
 langchain-text-splitters
 langchain-groq
 langchain-huggingface
-
 chromadb
 sentence-transformers
 pypdf
-
 duckduckgo-search
 ddgs
 tiktoken
