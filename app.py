@@ -1,40 +1,191 @@
 import streamlit as st
-import tempfile
 import os
 
-# LangChain
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
+
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_community.vectorstores import FAISS
 
 from langchain_groq import ChatGroq
-from langchain.chains import ConversationalRetrievalChain
-from langchain.memory import ConversationBufferMemory
+
+from langchain.chains.combine_documents import create_stuff_documents_chain
+from langchain.chains.retrieval import create_retrieval_chain
+
+from langchain_core.prompts import ChatPromptTemplate
 
 from langchain_community.tools import DuckDuckGoSearchResults
 
-# ----------------------------
-# Streamlit Setup
-# ----------------------------
 
-st.set_page_config(page_title="AI Research Assistant", page_icon="🤖")
+st.set_page_config(page_title="AI Research Assistant", layout="wide")
 
-st.title("🤖 AI Research Assistant")
-st.write("Search PDFs and the Web")
+st.title("🔎 AI Research Assistant (PDF + Web Search)")
 
-# ----------------------------
-# Upload PDFs
-# ----------------------------
 
-uploaded_files = st.file_uploader(
-    "Upload PDFs",
-    type="pdf",
-    accept_multiple_files=True
-)
+# ---------- API KEY ----------
+
+groq_api_key = st.secrets["GROQ_API_KEY"]
+
+
+# ---------- LOAD LLM ----------
+
+@st.cache_resource
+def load_llm():
+    return ChatGroq(
+        api_key=groq_api_key,
+        model="llama3-8b-8192"
+    )
+
+
+llm = load_llm()
+
+
+# ---------- EMBEDDINGS ----------
+
+@st.cache_resource
+def load_embeddings():
+    return HuggingFaceEmbeddings(
+        model_name="sentence-transformers/all-MiniLM-L6-v2"
+    )
+
+
+embeddings = load_embeddings()
+
+
+# ---------- VECTOR STORE ----------
 
 VECTOR_PATH = "vector_store"
 
+
+def create_vector_store(pdf):
+    loader = PyPDFLoader(pdf)
+    documents = loader.load()
+
+    splitter = RecursiveCharacterTextSplitter(
+        chunk_size=1000,
+        chunk_overlap=200
+    )
+
+    chunks = splitter.split_documents(documents)
+
+    vector_db = FAISS.from_documents(
+        chunks,
+        embeddings
+    )
+
+    vector_db.save_local(VECTOR_PATH)
+
+    return vector_db
+
+
+@st.cache_resource
+def load_vector_store():
+    if os.path.exists(VECTOR_PATH):
+        return FAISS.load_local(
+            VECTOR_PATH,
+            embeddings,
+            allow_dangerous_deserialization=True
+        )
+    return None
+
+
+vector_db = load_vector_store()
+
+
+# ---------- PROMPT ----------
+
+prompt = ChatPromptTemplate.from_template(
+"""
+Answer the question using the provided context.
+
+<context>
+{context}
+</context>
+
+Question: {input}
+
+Give a clear helpful answer.
+"""
+)
+
+
+# ---------- WEB SEARCH ----------
+
+search = DuckDuckGoSearchResults()
+
+
+# ---------- UI ----------
+
+st.sidebar.header("Upload PDF")
+
+pdf = st.sidebar.file_uploader(
+    "Upload a PDF",
+    type="pdf"
+)
+
+if pdf:
+    with open("temp.pdf", "wb") as f:
+        f.write(pdf.getbuffer())
+
+    vector_db = create_vector_store("temp.pdf")
+
+    st.sidebar.success("PDF processed!")
+
+
+# ---------- CHAT ----------
+
+user_question = st.text_input("Ask a question")
+
+
+if user_question:
+
+    llm = load_llm()
+
+    # ---------- WEB SEARCH MODE ----------
+
+    if "search" in user_question.lower() or "current" in user_question.lower():
+
+        web_result = search.invoke(user_question)
+
+        response = llm.invoke(
+            f"""
+            Answer the question using this web result.
+
+            {web_result}
+
+            Question: {user_question}
+            """
+        )
+
+        st.write(response.content)
+
+    # ---------- PDF SEARCH MODE ----------
+
+    elif vector_db:
+
+        retriever = vector_db.as_retriever()
+
+        document_chain = create_stuff_documents_chain(
+            llm,
+            prompt
+        )
+
+        retrieval_chain = create_retrieval_chain(
+            retriever,
+            document_chain
+        )
+
+        result = retrieval_chain.invoke(
+            {"input": user_question}
+        )
+
+        st.write(result["answer"])
+
+    else:
+
+        response = llm.invoke(user_question)
+
+        st.write(response.content)
 # ----------------------------
 # Embeddings
 # ----------------------------
