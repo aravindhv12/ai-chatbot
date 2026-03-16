@@ -9,13 +9,12 @@ from langchain_community.vectorstores import Chroma
 from langchain_groq import ChatGroq
 
 from langchain_core.prompts import ChatPromptTemplate
-from langchain.chains.combine_documents import create_stuff_documents_chain
-from langchain.chains.retrieval import create_retrieval_chain
+from langchain_core.output_parsers import StrOutputParser
 
 from langchain_community.tools import DuckDuckGoSearchResults
 
 
-# GROQ LLM
+# GROQ MODEL
 llm = ChatGroq(
     model="llama3-70b-8192",
     api_key=st.secrets["GROQ_API_KEY"]
@@ -26,15 +25,75 @@ embeddings = HuggingFaceEmbeddings(
     model_name="sentence-transformers/all-MiniLM-L6-v2"
 )
 
-# VECTOR DB
-def load_vector_db():
+# LOAD PDF
+loader = PyPDFLoader("data/sample.pdf")
+docs = loader.load()
 
-    loader = PyPDFLoader("data/sample.pdf")
-    docs = loader.load()
+# SPLIT TEXT
+splitter = RecursiveCharacterTextSplitter(
+    chunk_size=1000,
+    chunk_overlap=200
+)
 
-    splitter = RecursiveCharacterTextSplitter(
-        chunk_size=1000,
-        chunk_overlap=200
+documents = splitter.split_documents(docs)
+
+# VECTOR DATABASE
+vector_db = Chroma.from_documents(
+    documents,
+    embeddings,
+    persist_directory="vector_store"
+)
+
+retriever = vector_db.as_retriever()
+
+# PROMPT
+prompt = ChatPromptTemplate.from_template(
+"""
+You are an AI assistant.
+
+Answer the question using the provided context.
+
+Context:
+{context}
+
+Question:
+{question}
+"""
+)
+
+# WEB SEARCH
+search = DuckDuckGoSearchResults()
+
+# STREAMLIT UI
+st.title("AI Research Assistant")
+
+query = st.text_input("Ask a question")
+
+if query:
+
+    if "search" in query.lower():
+
+        result = search.invoke(query)
+
+        st.write("🌐 Web Search Result:")
+        st.write(result)
+
+    else:
+
+        docs = retriever.invoke(query)
+
+        context = "\n\n".join([d.page_content for d in docs])
+
+        chain = prompt | llm | StrOutputParser()
+
+        with st.spinner("Thinking..."):
+            response = chain.invoke({
+                "context": context,
+                "question": query
+            })
+
+        st.write("📄 Answer:")
+        st.write(response)        chunk_overlap=200
     )
 
     documents = splitter.split_documents(docs)
