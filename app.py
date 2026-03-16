@@ -98,7 +98,7 @@ if query:
         response = rag_chain.invoke({"input": query})
 
         st.write("📄 Answer:")
-        st.write(response["answer"])    )
+        st.write(response["answer"])  
 
 
 llm = load_llm()
