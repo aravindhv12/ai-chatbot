@@ -1,40 +1,104 @@
 import streamlit as st
-import os
 
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 from langchain_huggingface import HuggingFaceEmbeddings
-from langchain_community.vectorstores import FAISS
+from langchain_community.vectorstores import Chroma
 
 from langchain_groq import ChatGroq
 
+from langchain_core.prompts import ChatPromptTemplate
 from langchain.chains.combine_documents import create_stuff_documents_chain
 from langchain.chains.retrieval import create_retrieval_chain
-
-from langchain_core.prompts import ChatPromptTemplate
 
 from langchain_community.tools import DuckDuckGoSearchResults
 
 
-st.set_page_config(page_title="AI Research Assistant", layout="wide")
+# GROQ LLM
+llm = ChatGroq(
+    model="llama3-70b-8192",
+    api_key=st.secrets["GROQ_API_KEY"]
+)
 
-st.title("🔎 AI Research Assistant (PDF + Web Search)")
+# EMBEDDINGS
+embeddings = HuggingFaceEmbeddings(
+    model_name="sentence-transformers/all-MiniLM-L6-v2"
+)
 
+# VECTOR DB
+def load_vector_db():
 
-# ---------- API KEY ----------
+    loader = PyPDFLoader("data/sample.pdf")
+    docs = loader.load()
 
-groq_api_key = st.secrets["GROQ_API_KEY"]
-
-
-# ---------- LOAD LLM ----------
-
-@st.cache_resource
-def load_llm():
-    return ChatGroq(
-        api_key=groq_api_key,
-        model="llama3-8b-8192"
+    splitter = RecursiveCharacterTextSplitter(
+        chunk_size=1000,
+        chunk_overlap=200
     )
+
+    documents = splitter.split_documents(docs)
+
+    db = Chroma.from_documents(
+        documents,
+        embeddings,
+        persist_directory="vector_store"
+    )
+
+    return db
+
+
+vector_db = load_vector_db()
+
+
+# RETRIEVER
+retriever = vector_db.as_retriever()
+
+
+# PROMPT
+prompt = ChatPromptTemplate.from_template(
+"""
+Answer the question using the provided context.
+
+<context>
+{context}
+</context>
+
+Question: {input}
+"""
+)
+
+# DOCUMENT CHAIN
+document_chain = create_stuff_documents_chain(llm, prompt)
+
+# RAG CHAIN
+rag_chain = create_retrieval_chain(retriever, document_chain)
+
+
+# WEB SEARCH
+search = DuckDuckGoSearchResults()
+
+
+# STREAMLIT UI
+st.title("AI Research Assistant")
+
+query = st.text_input("Ask a question")
+
+if query:
+
+    if "search" in query.lower():
+
+        result = search.invoke(query)
+
+        st.write("🌐 Web Search Result:")
+        st.write(result)
+
+    else:
+
+        response = rag_chain.invoke({"input": query})
+
+        st.write("📄 Answer:")
+        st.write(response["answer"])    )
 
 
 llm = load_llm()
