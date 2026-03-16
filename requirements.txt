@@ -1,19 +1,15 @@
-streamlit==1.36.0
+streamlit
+langchain
+langchain-community
+langchain-core
+langchain-text-splitters
+langchain-groq
+langchain-huggingface
 
-langchain==0.1.20
-langchain-community==0.0.38
-langchain-core==0.1.52
-langchain-text-splitters==0.0.2
+chromadb
+sentence-transformers
+pypdf
 
-langchain-groq==0.1.4
-langchain-huggingface==0.0.3
-
-faiss-cpu==1.7.4
-sentence-transformers==2.7.0
-
-pypdf==4.2.0
-duckduckgo-search==5.3.1
-ddgs==1.0.8
-
-pydantic==2.7.4
-tiktoken==0.7.0
+duckduckgo-search
+ddgs
+tiktoken
