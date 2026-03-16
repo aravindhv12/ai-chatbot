@@ -1,5 +1,5 @@
 streamlit
-langchain>=0.1.135
+langchain==0.1.235
 langchain-community
 langchain-groq
 langchain-huggingface
