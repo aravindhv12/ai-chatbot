@@ -24,7 +24,7 @@ st.title("AI Research Assistant")
 
 
 # -----------------------------
-# API KEY
+# SIDEBAR
 # -----------------------------
 
 groq_api_key = st.sidebar.text_input(
@@ -33,25 +33,30 @@ groq_api_key = st.sidebar.text_input(
     key="groq_key"
 )
 
+st.sidebar.markdown("Upload PDFs and ask questions.")
+
+
 # -----------------------------
-# FILE UPLOAD
+# FILE UPLOADER
 # -----------------------------
 
 uploaded_files = st.file_uploader(
     "Upload PDF files",
     type="pdf",
     accept_multiple_files=True,
-    key="pdf_upload"
+    key="pdf_uploader"
 )
 
+
 # -----------------------------
-# USER QUERY
+# USER QUESTION
 # -----------------------------
 
 query = st.text_input(
     "Ask a question",
     key="query_input"
 )
+
 
 # -----------------------------
 # LOAD EMBEDDINGS
@@ -65,7 +70,7 @@ def load_embeddings():
 
 
 # -----------------------------
-# BUILD VECTOR DB
+# BUILD VECTOR DATABASE
 # -----------------------------
 
 @st.cache_resource
@@ -86,6 +91,7 @@ def build_vector_db(files):
 
         all_docs.extend(docs)
 
+    # TEXT SPLITTING
     splitter = RecursiveCharacterTextSplitter(
         chunk_size=1000,
         chunk_overlap=200
@@ -93,6 +99,7 @@ def build_vector_db(files):
 
     documents = splitter.split_documents(all_docs)
 
+    # VECTOR DATABASE
     vector_db = Chroma.from_documents(
         documents,
         embeddings
@@ -102,7 +109,7 @@ def build_vector_db(files):
 
 
 # -----------------------------
-# WEB SEARCH
+# WEB SEARCH TOOL
 # -----------------------------
 
 search_tool = DuckDuckGoSearchResults()
@@ -112,7 +119,11 @@ search_tool = DuckDuckGoSearchResults()
 # RUN QUERY
 # -----------------------------
 
-if query and groq_api_key:
+if query:
+
+    if not groq_api_key:
+        st.warning("Please enter Groq API key in sidebar")
+        st.stop()
 
     llm = ChatGroq(
         groq_api_key=groq_api_key,
@@ -121,36 +132,56 @@ if query and groq_api_key:
 
     context = ""
 
+    # -----------------------------
     # PDF SEARCH
+    # -----------------------------
+
     if uploaded_files:
 
-        vector_db = build_vector_db(uploaded_files)
+        with st.spinner("Processing PDFs..."):
 
-        retriever = vector_db.as_retriever()
+            vector_db = build_vector_db(uploaded_files)
 
-        docs = retriever.invoke(query)
+            retriever = vector_db.as_retriever()
 
-        context = "\n\n".join([d.page_content for d in docs])
+            docs = retriever.invoke(query)
 
+            pdf_context = "\n\n".join([d.page_content for d in docs])
+
+            context += pdf_context
+
+
+    # -----------------------------
     # WEB SEARCH
-    web_results = search_tool.run(query)
+    # -----------------------------
 
-    context = context + "\n\nWeb Results:\n" + web_results
+    with st.spinner("Searching web..."):
 
+        web_results = search_tool.run(query)
+
+        context += "\n\nWeb Results:\n" + web_results
+
+
+    # -----------------------------
+    # PROMPT
+    # -----------------------------
 
     prompt = ChatPromptTemplate.from_template(
         """
-        Answer the question using the context below.
+You are an AI research assistant.
 
-        Context:
-        {context}
+Use the context below to answer the question.
 
-        Question:
-        {question}
+Context:
+{context}
 
-        Provide a helpful answer.
-        """
+Question:
+{question}
+
+Give a clear helpful answer.
+"""
     )
+
 
     chain = prompt | llm | StrOutputParser()
 
@@ -159,156 +190,11 @@ if query and groq_api_key:
         "question": query
     })
 
+
+    # -----------------------------
+    # OUTPUT
+    # -----------------------------
+
     st.subheader("Answer")
 
     st.write(response)
-
-
-elif query and not groq_api_key:
-
-    st.warning("Please enter your Groq API key"))
-
-vector_db = None
-
-if uploaded_files:
-
-    all_docs = []
-
-    for uploaded_file in uploaded_files:
-
-        with tempfile.NamedTemporaryFile(delete=False) as tmp_file:
-            tmp_file.write(uploaded_file.read())
-            tmp_path = tmp_file.name
-
-        loader = PyPDFLoader(tmp_path)
-        docs = loader.load()
-
-        all_docs.extend(docs)
-
-    splitter = RecursiveCharacterTextSplitter(
-        chunk_size=1000,
-        chunk_overlap=200
-    )
-
-    documents = splitter.split_documents(all_docs)
-
-    vector_db = Chroma.from_documents(
-        documents,
-        embeddings
-    )
-
-    st.success("PDFs processed successfully")
-
-
-# WEB SEARCH TOOL
-search = DuckDuckGoSearchResults()
-
-
-# PROMPT
-prompt = ChatPromptTemplate.from_template(
-"""
-Answer the question using the context below.
-
-Context:
-{context}
-
-Question:
-{question}
-"""
-)
-
-
-query = st.text_input("Ask a question")
-
-
-if query:
-
-    # WEB SEARCH MODE
-    if "search" in query.lower():
-
-        result = search.invoke(query)
-
-        st.write("🌐 Web Search Result:")
-        st.write(result)
-
-    # PDF MODE
-    elif vector_db:
-
-        retriever = vector_db.as_retriever()
-
-        docs = retriever.invoke(query)
-
-        context = "\n\n".join([d.page_content for d in docs])
-
-        chain = prompt | llm | StrOutputParser()
-
-        with st.spinner("Thinking..."):
-
-            response = chain.invoke({
-                "context": context,
-                "question": query
-            })
-
-        st.write("📄 Answer:")
-        st.write(response)
-
-    else:
-
-        st.warning("Upload PDFs or use web search")
-documents = splitter.split_documents(docs)
-
-# Vector DB
-vector_db = Chroma.from_documents(
-    documents,
-    embeddings,
-    persist_directory="vector_store"
-)
-
-retriever = vector_db.as_retriever()
-
-# Prompt
-prompt = ChatPromptTemplate.from_template(
-"""
-Answer the question using the context below.
-
-Context:
-{context}
-
-Question:
-{question}
-"""
-)
-
-# Web search tool
-search = DuckDuckGoSearchResults()
-
-# Streamlit UI
-st.title("AI Research Assistant")
-
-query = st.text_input("Ask a question")
-
-if query:
-
-    if "search" in query.lower():
-
-        result = search.invoke(query)
-
-        st.write("🌐 Web Search Result:")
-        st.write(result)
-
-    else:
-
-        docs = retriever.invoke(query)
-
-        context = "\n\n".join([d.page_content for d in docs])
-
-        chain = prompt | llm | StrOutputParser()
-
-        with st.spinner("Thinking..."):
-            response = chain.invoke({
-                "context": context,
-                "question": query
-            })
-
-        st.write("📄 Answer:")
-        st.write(response)
