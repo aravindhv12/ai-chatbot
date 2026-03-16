@@ -196,7 +196,8 @@ if query:
         search_results = search_tool.run(query)
         results_text += f"**From Web Search:** {search_results}\n\n"
 
-    st.markdown(results_text or "No results found.")    st.stop()
+    st.markdown(results_text or "No results found.")    
+    st.stop()
 
 # Initialize Groq
 chat_groq = ChatGroq(api_key=GROQ_API_KEY)
