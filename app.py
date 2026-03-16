@@ -1,40 +1,63 @@
-import os
 import streamlit as st
+from pathlib import Path
 
-# -------------------------------
-# DOCUMENT LOADER
-# -------------------------------
-from langchain_community.document_loaders import PyPDFLoader
-
-# -------------------------------
-# TEXT SPLITTING
-# -------------------------------
-from langchain_text_splitters import RecursiveCharacterTextSplitter
-
-# -------------------------------
-# EMBEDDINGS
-# -------------------------------
-from langchain_huggingface import HuggingFaceEmbeddings
-
-# -------------------------------
-# VECTORSTORE (Chroma)
-# -------------------------------
-try:
-    from langchain.vectorstores import Chroma
-except ModuleNotFoundError:
-    from langchain.vectorstores.chroma import Chroma
-
-# -------------------------------
-# LLM / Groq
-# -------------------------------
+# LangChain imports
+from langchain.embeddings import HuggingFaceEmbeddings
+from langchain.vectorstores import Chroma
 from langchain_groq import ChatGroq
+from langchain.text_splitter import CharacterTextSplitter
+from langchain.document_loaders import PyPDFLoader
 
-# -------------------------------
-# CONVERSATIONAL RETRIEVAL
-# -------------------------------
-from langchain.chains import ConversationalRetrievalChain
+# ----------------------------
+# Page Config
+# ----------------------------
+st.set_page_config(page_title="AI PDF Chatbot", layout="wide")
+st.title("📄 AI PDF Chatbot")
+st.write("Upload a PDF and ask questions about its content!")
 
-# -------------------------------
+# ----------------------------
+# Upload PDF
+# ----------------------------
+uploaded_file = st.file_uploader("Upload PDF", type="pdf")
+if uploaded_file:
+    pdf_path = Path("./uploaded.pdf")
+    with open(pdf_path, "wb") as f:
+        f.write(uploaded_file.getbuffer())
+    
+    st.success("✅ PDF uploaded!")
+
+    # ----------------------------
+    # Load PDF
+    # ----------------------------
+    loader = PyPDFLoader(str(pdf_path))
+    docs = loader.load()
+    
+    # ----------------------------
+    # Split text
+    # ----------------------------
+    text_splitter = CharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
+    docs = text_splitter.split_documents(docs)
+    
+    # ----------------------------
+    # Embeddings + VectorStore
+    # ----------------------------
+    embeddings = HuggingFaceEmbeddings()
+    vectordb = Chroma.from_documents(docs, embedding=embeddings, persist_directory="./chroma_db")
+    st.success("✅ PDF processed and vector store created!")
+
+# ----------------------------
+# Chat
+# ----------------------------
+query = st.text_input("Ask something about your PDF:")
+
+if query:
+    if 'vectordb' not in locals():
+        st.warning("Upload a PDF first!")
+    else:
+        chat = ChatGroq(vectordb=vectordb)
+        results_text = chat.ask(query)
+        st.markdown(results_text or "No results found.")
+        st.stop()  # <- must be on its own line# -------------------------------
 # WEB SEARCH TOOL
 # -------------------------------
 from langchain_community.tools import DuckDuckGoSearchResults
