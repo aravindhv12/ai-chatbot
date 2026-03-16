@@ -105,7 +105,8 @@ if query:
         search_results = search_tool.run(query)
         results_text += f"**From Web Search:** {search_results}\n\n"
 
-    st.markdown(results_text or "No results found.")docs = []
+    st.markdown(results_text or "No results found.")
+    docs = []
 if uploaded_files:
     for uploaded_file in uploaded_files:
         loader = PyPDFLoader(uploaded_file)
