@@ -1,11 +1,13 @@
+streamlit
 langchain==0.2.16
 langchain-community==0.2.16
 langchain-core==0.2.38
+langchain-groq
+langchain-huggingface
 pydantic==1.10.13
-streamlit
 faiss-cpu
 sentence-transformers
 pypdf
-langchain-groq
-langchain-huggingface
+duckduckgo-search
 ddgs
+tiktoken
