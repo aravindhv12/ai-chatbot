@@ -2,7 +2,6 @@ import streamlit as st
 import sys
 import tempfile
 
-# LangChain imports (STABLE)
 from langchain_groq import ChatGroq
 from langchain.document_loaders import PyPDFLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
