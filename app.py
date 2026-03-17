@@ -1,3 +1,9 @@
+# ----------------------------
+# DISABLE TELEMETRY (IMPORTANT)
+# ----------------------------
+import os
+os.environ["ANONYMIZED_TELEMETRY"] = "False"
+
 import streamlit as st
 import sys
 import tempfile
@@ -17,7 +23,7 @@ st.set_page_config(page_title="AI PDF Chatbot", layout="wide")
 
 st.title("📄 AI PDF + Web Chatbot")
 
-# Sidebar Debug
+# Debug sidebar
 st.sidebar.title("⚙️ Debug Info")
 st.sidebar.code(sys.version)
 
@@ -30,7 +36,9 @@ if not GROQ_API_KEY:
     st.error("❌ Please add GROQ_API_KEY in Streamlit secrets")
     st.stop()
 
-# ✅ UPDATED MODEL (working)
+# ----------------------------
+# LLM (UPDATED MODEL)
+# ----------------------------
 llm = ChatGroq(
     api_key=GROQ_API_KEY,
     model_name="llama-3.1-8b-instant"
@@ -43,7 +51,7 @@ if "vector_db" not in st.session_state:
     st.session_state.vector_db = None
 
 # ----------------------------
-# FILE UPLOADER (UNIQUE KEY)
+# FILE UPLOADER
 # ----------------------------
 uploaded_files = st.file_uploader(
     "Upload PDF files",
@@ -53,7 +61,7 @@ uploaded_files = st.file_uploader(
 )
 
 # ----------------------------
-# PROCESS PDFs
+# PROCESS PDF
 # ----------------------------
 if uploaded_files:
     documents = []
@@ -74,7 +82,7 @@ if uploaded_files:
 
     split_docs = splitter.split_documents(documents)
 
-    # ✅ Stable embeddings (no external dependencies)
+    # Stable embeddings (no heavy dependencies)
     embeddings = FakeEmbeddings(size=384)
 
     vector_db = Chroma.from_documents(split_docs, embedding=embeddings)
