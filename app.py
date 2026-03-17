@@ -1,9 +1,13 @@
 # ----------------------------
-# DISABLE TELEMETRY (IMPORTANT)
+# FIX TELEMETRY (IMPORTANT)
 # ----------------------------
 import os
 os.environ["ANONYMIZED_TELEMETRY"] = "False"
+os.environ["CHROMA_TELEMETRY_IMPL"] = "none"
 
+# ----------------------------
+# IMPORTS
+# ----------------------------
 import streamlit as st
 import sys
 import tempfile
@@ -14,16 +18,15 @@ from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.embeddings import FakeEmbeddings
 from langchain.vectorstores import Chroma
 from langchain.chains import RetrievalQA
-from langchain.tools import DuckDuckGoSearchResults
+from langchain_community.tools import DuckDuckGoSearchRun
 
 # ----------------------------
 # PAGE CONFIG
 # ----------------------------
 st.set_page_config(page_title="AI PDF Chatbot", layout="wide")
-
 st.title("📄 AI PDF + Web Chatbot")
 
-# Debug sidebar
+# Debug info
 st.sidebar.title("⚙️ Debug Info")
 st.sidebar.code(sys.version)
 
@@ -51,13 +54,13 @@ if "vector_db" not in st.session_state:
     st.session_state.vector_db = None
 
 # ----------------------------
-# FILE UPLOADER
+# FILE UPLOADER (FIXED KEY)
 # ----------------------------
 uploaded_files = st.file_uploader(
     "Upload PDF files",
     type=["pdf"],
     accept_multiple_files=True,
-    key="pdf_uploader"
+    key="pdf_uploader_unique"
 )
 
 # ----------------------------
@@ -69,6 +72,7 @@ if uploaded_files:
     for uploaded_file in uploaded_files:
         with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_file:
             tmp_file.write(uploaded_file.read())
+
             loader = PyPDFLoader(tmp_file.name)
             docs = loader.load()
             documents.extend(docs)
@@ -82,7 +86,7 @@ if uploaded_files:
 
     split_docs = splitter.split_documents(documents)
 
-    # Stable embeddings (no heavy dependencies)
+    # Stable embeddings (NO dependency issues)
     embeddings = FakeEmbeddings(size=384)
 
     vector_db = Chroma.from_documents(split_docs, embedding=embeddings)
@@ -93,12 +97,12 @@ if uploaded_files:
 # ----------------------------
 # OPTIONS
 # ----------------------------
-use_web = st.checkbox("🌐 Enable Web Search", key="web_checkbox")
+use_web = st.checkbox("🌐 Enable Web Search", key="web_checkbox_unique")
 
 # ----------------------------
-# QUERY INPUT
+# QUERY INPUT (FIXED KEY)
 # ----------------------------
-query = st.text_input("Ask your question:", key="query_input")
+query = st.text_input("Ask your question:", key="query_input_unique")
 
 # ----------------------------
 # HANDLE QUERY
@@ -106,7 +110,9 @@ query = st.text_input("Ask your question:", key="query_input")
 if query:
     output = ""
 
-    # PDF Answer
+    # ------------------------
+    # PDF ANSWER
+    # ------------------------
     if st.session_state.vector_db is not None:
         try:
             qa_chain = RetrievalQA.from_chain_type(
@@ -122,10 +128,12 @@ if query:
         except Exception as e:
             st.error("PDF Error: " + str(e))
 
-    # Web Search
+    # ------------------------
+    # WEB SEARCH (FIXED)
+    # ------------------------
     if use_web:
         try:
-            search = DuckDuckGoSearchResults()
+            search = DuckDuckGoSearchRun()
             web_result = search.run(query)
 
             if web_result:
@@ -134,7 +142,9 @@ if query:
         except Exception as e:
             st.error("Web Error: " + str(e))
 
+    # ------------------------
     # FINAL OUTPUT
+    # ------------------------
     if output.strip():
         st.markdown(output)
     else:
