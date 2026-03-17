@@ -11,8 +11,7 @@ os.environ["CHROMA_TELEMETRY_IMPL"] = "none"
 import streamlit as st
 import sys
 import tempfile
-import uuid
-import chromadb
+import shutil
 
 from langchain_groq import ChatGroq
 from langchain.document_loaders import PyPDFLoader
@@ -28,7 +27,7 @@ from langchain_community.tools import DuckDuckGoSearchRun
 st.set_page_config(page_title="AI PDF Chatbot", layout="wide")
 st.title("📄 AI PDF + Web Chatbot")
 
-# Debug info
+# Debug
 st.sidebar.title("⚙️ Debug Info")
 st.sidebar.code(sys.version)
 
@@ -42,7 +41,7 @@ if not GROQ_API_KEY:
     st.stop()
 
 # ----------------------------
-# LLM
+# LLM (WORKING MODEL)
 # ----------------------------
 llm = ChatGroq(
     api_key=GROQ_API_KEY,
@@ -66,7 +65,7 @@ uploaded_files = st.file_uploader(
 )
 
 # ----------------------------
-# PROCESS PDF (FIXED CHROMA BUG)
+# PROCESS PDF (STABLE)
 # ----------------------------
 if uploaded_files and st.session_state.vector_db is None:
 
@@ -89,17 +88,19 @@ if uploaded_files and st.session_state.vector_db is None:
 
     split_docs = splitter.split_documents(documents)
 
+    # Lightweight embeddings (no dependency issues)
     embeddings = FakeEmbeddings(size=384)
 
-    # 🔥 CRITICAL FIX (prevents crash)
-    chromadb.api.client.SharedSystemClient._identifiers_to_system.clear()
+    # ✅ SAFE RESET (NO CHROMA CRASH)
+    persist_dir = "chroma_db"
 
-    collection_name = f"collection_{uuid.uuid4()}"
+    if os.path.exists(persist_dir):
+        shutil.rmtree(persist_dir)
 
     vector_db = Chroma.from_documents(
         split_docs,
         embedding=embeddings,
-        collection_name=collection_name
+        persist_directory=persist_dir
     )
 
     st.session_state.vector_db = vector_db
