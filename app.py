@@ -2,39 +2,100 @@ import streamlit as st
 import sys
 import tempfile
 
-# LangChain imports (UPDATED)
+# LangChain imports (STABLE)
 from langchain_groq import ChatGroq
-from langchain_community.document_loaders import PyPDFLoader
-from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain_huggingface import HuggingFaceEmbeddings
-from langchain_community.vectorstores import Chroma
-
-# New LangChain chain system
-from langchain.chains.retrieval import create_retrieval_chain
-from langchain.chains.combine_documents import create_stuff_documents_chain
-from langchain_core.prompts import ChatPromptTemplate
-
-from langchain_community.tools import DuckDuckGoSearchResults
+from langchain.document_loaders import PyPDFLoader
+from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain.embeddings import HuggingFaceEmbeddings
+from langchain.vectorstores import Chroma
+from langchain.chains import RetrievalQA
+from langchain.tools import DuckDuckGoSearchResults
 
 # ----------------------------
-# PAGE CONFIG
+# CONFIG
 # ----------------------------
-st.set_page_config(page_title="AI PDF + Web Chatbot", layout="wide")
+st.set_page_config(page_title="AI PDF Chatbot", layout="wide")
 
-# ----------------------------
-# DEBUG INFO
-# ----------------------------
-st.sidebar.title("⚙️ Debug Info")
-st.sidebar.write("### Python Version")
+st.sidebar.title("⚙️ Debug")
 st.sidebar.code(sys.version)
 
-# ----------------------------
-# TITLE
-# ----------------------------
-st.title("📄 AI Multi-PDF & Web Chatbot")
+st.title("📄 AI PDF + Web Chatbot")
 
 # ----------------------------
-# GROQ API KEY
+# GROQ API
+# ----------------------------
+GROQ_API_KEY = st.secrets.get("GROQ_API_KEY")
+
+if not GROQ_API_KEY:
+    st.error("Add GROQ_API_KEY in secrets")
+    st.stop()
+
+llm = ChatGroq(
+    api_key=GROQ_API_KEY,
+    model_name="llama3-70b-8192"
+)
+
+# ----------------------------
+# SESSION
+# ----------------------------
+if "db" not in st.session_state:
+    st.session_state.db = None
+
+# ----------------------------
+# UPLOAD
+# ----------------------------
+files = st.file_uploader("Upload PDFs", type="pdf", accept_multiple_files=True)
+
+if files:
+    docs = []
+
+    for file in files:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
+            tmp.write(file.read())
+            loader = PyPDFLoader(tmp.name)
+            docs.extend(loader.load())
+
+    splitter = RecursiveCharacterTextSplitter(
+        chunk_size=500,
+        chunk_overlap=50
+    )
+
+    docs = splitter.split_documents(docs)
+
+    embeddings = HuggingFaceEmbeddings()
+
+    db = Chroma.from_documents(docs, embedding=embeddings)
+
+    st.session_state.db = db
+    st.success("✅ PDF processed")
+
+# ----------------------------
+# OPTIONS
+# ----------------------------
+use_web = st.checkbox("Enable Web Search")
+
+query = st.text_input("Ask a question")
+
+if query:
+    output = ""
+
+    # PDF QA
+    if st.session_state.db:
+        qa = RetrievalQA.from_chain_type(
+            llm=llm,
+            retriever=st.session_state.db.as_retriever()
+        )
+
+        res = qa.run(query)
+        output += f"### 📄 PDF Answer\n{res}\n\n"
+
+    # Web
+    if use_web:
+        search = DuckDuckGoSearchResults()
+        web = search.run(query)
+        output += f"### 🌐 Web Results\n{web}"
+
+    st.markdown(output if output else "No results")# GROQ API KEY
 # ----------------------------
 GROQ_API_KEY = st.secrets.get("GROQ_API_KEY")
 
