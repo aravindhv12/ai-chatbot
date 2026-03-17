@@ -19,7 +19,9 @@ from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_community.embeddings import FakeEmbeddings
 from langchain_community.vectorstores import Chroma
 from langchain.chains import RetrievalQA
-from langchain_community.tools import DuckDuckGoSearchRun
+
+# ✅ FIXED WEB SEARCH
+from duckduckgo_search import DDGS
 
 # ----------------------------
 # PAGE CONFIG
@@ -27,7 +29,7 @@ from langchain_community.tools import DuckDuckGoSearchRun
 st.set_page_config(page_title="AI Chatbot", layout="wide")
 
 # ----------------------------
-# SAFE CSS (ONLY PLACE CSS EXISTS)
+# CLEAN CSS (NO ERRORS)
 # ----------------------------
 st.markdown("""
 <style>
@@ -197,12 +199,18 @@ if query:
         except Exception as e:
             response += f"PDF Error: {str(e)}\n"
 
-    # WEB SEARCH
+    # ✅ FIXED WEB SEARCH (NO ERROR)
     if use_web:
         try:
-            search = DuckDuckGoSearchRun()
-            web_result = search.run(query)
+            results = []
+            with DDGS() as ddgs:
+                for r in ddgs.text(query, max_results=3):
+                    results.append(f"🔹 {r['title']}\n{r['body']}")
+
+            web_result = "\n\n".join(results)
+
             response += f"🌐 {web_result}"
+
         except Exception as e:
             response += f"Web Error: {str(e)}"
 
