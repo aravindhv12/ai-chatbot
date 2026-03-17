@@ -1,11 +1,8 @@
 streamlit==1.55.0
-
 langchain==0.0.352
 langchain-community==0.0.20
 langchain-groq==0.0.1
-
-chromadb==0.4.22
-
+chromadb==0.4.24
 pypdf==3.17.4
 duckduckgo-search==5.3.0
 tiktoken==0.5.2
