@@ -11,6 +11,8 @@ os.environ["CHROMA_TELEMETRY_IMPL"] = "none"
 import streamlit as st
 import sys
 import tempfile
+import uuid
+import chromadb
 
 from langchain_groq import ChatGroq
 from langchain.document_loaders import PyPDFLoader
@@ -40,7 +42,7 @@ if not GROQ_API_KEY:
     st.stop()
 
 # ----------------------------
-# LLM (UPDATED MODEL)
+# LLM
 # ----------------------------
 llm = ChatGroq(
     api_key=GROQ_API_KEY,
@@ -54,7 +56,7 @@ if "vector_db" not in st.session_state:
     st.session_state.vector_db = None
 
 # ----------------------------
-# FILE UPLOADER (FIXED KEY)
+# FILE UPLOADER
 # ----------------------------
 uploaded_files = st.file_uploader(
     "Upload PDF files",
@@ -64,9 +66,10 @@ uploaded_files = st.file_uploader(
 )
 
 # ----------------------------
-# PROCESS PDF
+# PROCESS PDF (FIXED CHROMA BUG)
 # ----------------------------
-if uploaded_files:
+if uploaded_files and st.session_state.vector_db is None:
+
     documents = []
 
     for uploaded_file in uploaded_files:
@@ -86,10 +89,19 @@ if uploaded_files:
 
     split_docs = splitter.split_documents(documents)
 
-    # Stable embeddings (NO dependency issues)
     embeddings = FakeEmbeddings(size=384)
 
-    vector_db = Chroma.from_documents(split_docs, embedding=embeddings)
+    # 🔥 CRITICAL FIX (prevents crash)
+    chromadb.api.client.SharedSystemClient._identifiers_to_system.clear()
+
+    collection_name = f"collection_{uuid.uuid4()}"
+
+    vector_db = Chroma.from_documents(
+        split_docs,
+        embedding=embeddings,
+        collection_name=collection_name
+    )
+
     st.session_state.vector_db = vector_db
 
     st.success("✅ PDF processed successfully!")
@@ -100,7 +112,7 @@ if uploaded_files:
 use_web = st.checkbox("🌐 Enable Web Search", key="web_checkbox_unique")
 
 # ----------------------------
-# QUERY INPUT (FIXED KEY)
+# QUERY INPUT
 # ----------------------------
 query = st.text_input("Ask your question:", key="query_input_unique")
 
