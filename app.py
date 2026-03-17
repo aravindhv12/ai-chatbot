@@ -115,7 +115,6 @@ if uploaded_files and st.session_state.vector_db is None:
         split_docs = splitter.split_documents(docs)
 
         embeddings = FakeEmbeddings(size=384)
-        # Unique temp dir per session to avoid conflicts
         persist_dir = os.path.join(tempfile.gettempdir(), f"chroma_{time.time()}")
         st.session_state.vector_db = Chroma.from_documents(
             split_docs,
@@ -178,7 +177,8 @@ if query:
             with DDGS() as ddgs:
                 for r in ddgs.text(query, max_results=3):
                     results.append(f"🔹 {r['title']}\n{r['body']}")
-            response += f"🌐 {'\n'.join(results)}"
+            web_text = "\n".join(results)  # <-- Build string outside f-string
+            response += f"🌐 {web_text}"
         except Exception as e:
             response += f"Web Error: {str(e)}\n"
 
