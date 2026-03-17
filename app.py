@@ -2,7 +2,6 @@ import streamlit as st
 import sys
 import tempfile
 
-# LangChain (stable versions)
 from langchain_groq import ChatGroq
 from langchain.document_loaders import PyPDFLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
@@ -16,14 +15,13 @@ from langchain.tools import DuckDuckGoSearchResults
 # ----------------------------
 st.set_page_config(page_title="AI PDF Chatbot", layout="wide")
 
-# Debug
 st.sidebar.title("⚙️ Debug")
 st.sidebar.code(sys.version)
 
 st.title("📄 AI PDF + Web Chatbot")
 
 # ----------------------------
-# GROQ API
+# API KEY
 # ----------------------------
 GROQ_API_KEY = st.secrets.get("GROQ_API_KEY")
 
@@ -35,6 +33,80 @@ llm = ChatGroq(
     api_key=GROQ_API_KEY,
     model_name="llama3-70b-8192"
 )
+
+# ----------------------------
+# SESSION STATE
+# ----------------------------
+if "db" not in st.session_state:
+    st.session_state.db = None
+
+# ----------------------------
+# FILE UPLOADER (FIXED)
+# ----------------------------
+uploaded_files = st.file_uploader(
+    "Upload PDFs",
+    type="pdf",
+    accept_multiple_files=True,
+    key="pdf_uploader"   # ✅ FIXED
+)
+
+if uploaded_files:
+    docs = []
+
+    for file in uploaded_files:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
+            tmp.write(file.read())
+            loader = PyPDFLoader(tmp.name)
+            docs.extend(loader.load())
+
+    st.success(f"Loaded {len(docs)} pages")
+
+    splitter = RecursiveCharacterTextSplitter(
+        chunk_size=500,
+        chunk_overlap=50
+    )
+    docs = splitter.split_documents(docs)
+
+    embeddings = HuggingFaceEmbeddings()
+
+    db = Chroma.from_documents(docs, embedding=embeddings)
+    st.session_state.db = db
+
+    st.success("✅ PDF processed successfully")
+
+# ----------------------------
+# OPTIONS
+# ----------------------------
+use_web = st.checkbox("🌐 Enable Web Search", key="web_toggle")
+
+# ----------------------------
+# QUERY INPUT (FIXED)
+# ----------------------------
+query = st.text_input("Ask a question", key="query_input")
+
+if query:
+    output = ""
+
+    # PDF QA
+    if st.session_state.db:
+        qa = RetrievalQA.from_chain_type(
+            llm=llm,
+            retriever=st.session_state.db.as_retriever()
+        )
+
+        answer = qa.run(query)
+        output += f"### 📄 PDF Answer\n{answer}\n\n"
+
+    # Web
+    if use_web:
+        search = DuckDuckGoSearchResults()
+        web_result = search.run(query)
+        output += f"### 🌐 Web Results\n{web_result}"
+
+    if output:
+        st.markdown(output)
+    else:
+        st.warning("Upload PDF or enable web search"))
 
 # ----------------------------
 # SESSION STATE
