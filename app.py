@@ -2,35 +2,36 @@ import streamlit as st
 import sys
 import tempfile
 
-# LangChain imports
+# LangChain imports (UPDATED)
 from langchain_groq import ChatGroq
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_community.vectorstores import Chroma
-from langchain.chains import RetrievalQA
+
+# New LangChain chain system
+from langchain.chains.retrieval import create_retrieval_chain
+from langchain.chains.combine_documents import create_stuff_documents_chain
+from langchain_core.prompts import ChatPromptTemplate
+
 from langchain_community.tools import DuckDuckGoSearchResults
 
 # ----------------------------
 # PAGE CONFIG
 # ----------------------------
-st.set_page_config(page_title="PDF Chatbot Debug", layout="wide")
+st.set_page_config(page_title="AI PDF + Web Chatbot", layout="wide")
 
 # ----------------------------
-# DEBUG: PYTHON VERSION
+# DEBUG INFO
 # ----------------------------
 st.sidebar.title("⚙️ Debug Info")
-
-st.sidebar.write("### 🐍 Python Version")
+st.sidebar.write("### Python Version")
 st.sidebar.code(sys.version)
-
-st.sidebar.write("### 📦 Platform")
-st.sidebar.code(sys.platform)
 
 # ----------------------------
 # TITLE
 # ----------------------------
-st.title("📄 AI PDF + Web Chatbot")
+st.title("📄 AI Multi-PDF & Web Chatbot")
 
 # ----------------------------
 # GROQ API KEY
@@ -38,7 +39,7 @@ st.title("📄 AI PDF + Web Chatbot")
 GROQ_API_KEY = st.secrets.get("GROQ_API_KEY")
 
 if not GROQ_API_KEY:
-    st.error("❌ Add GROQ_API_KEY in Streamlit secrets")
+    st.error("❌ Please add GROQ_API_KEY in Streamlit secrets")
     st.stop()
 
 llm = ChatGroq(
@@ -84,6 +85,7 @@ if uploaded_files:
         model_name="sentence-transformers/all-MiniLM-L6-v2"
     )
 
+    # Vector DB
     vector_db = Chroma.from_documents(
         split_docs,
         embedding=embeddings
@@ -98,29 +100,43 @@ if uploaded_files:
 use_web = st.checkbox("🌐 Enable Web Search")
 
 # ----------------------------
-# QUERY
+# QUERY INPUT
 # ----------------------------
 query = st.text_input("Ask a question")
 
 if query:
     result = ""
 
-    # PDF QA
+    # ----------------------------
+    # PDF QA (NEW METHOD)
+    # ----------------------------
     if st.session_state.vector_db:
-        qa = RetrievalQA.from_chain_type(
-            llm=llm,
-            retriever=st.session_state.vector_db.as_retriever()
+        retriever = st.session_state.vector_db.as_retriever()
+
+        prompt = ChatPromptTemplate.from_template(
+            "Answer the question based only on the context:\n\n{context}\n\nQuestion: {input}"
         )
 
-        response = qa.invoke({"query": query})
-        result += f"### 📄 PDF Answer\n{response['result']}\n\n"
+        document_chain = create_stuff_documents_chain(llm, prompt)
 
-    # Web search
+        qa_chain = create_retrieval_chain(retriever, document_chain)
+
+        response = qa_chain.invoke({"input": query})
+
+        result += f"### 📄 PDF Answer\n{response['answer']}\n\n"
+
+    # ----------------------------
+    # WEB SEARCH
+    # ----------------------------
     if use_web:
         search = DuckDuckGoSearchResults()
         web_result = search.run(query)
-        result += f"### 🌐 Web Results\n{web_result}"
 
+        result += f"### 🌐 Web Results\n{web_result}\n\n"
+
+    # ----------------------------
+    # OUTPUT
+    # ----------------------------
     if result:
         st.markdown(result)
     else:
