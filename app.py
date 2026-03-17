@@ -20,7 +20,7 @@ from langchain_community.embeddings import FakeEmbeddings
 from langchain_community.vectorstores import Chroma
 from langchain.chains import RetrievalQA
 
-from duckduckgo_search import DDGS  # Web search
+from duckduckgo_search import DDGS
 
 # ----------------------------
 # PAGE CONFIG
@@ -54,7 +54,6 @@ st.title("🤖 AI PDF + Web Chatbot")
 # API KEY
 # ----------------------------
 GROQ_API_KEY = st.secrets.get("GROQ_API_KEY")
-
 if not GROQ_API_KEY:
     st.error("❌ Add GROQ_API_KEY in Streamlit secrets")
     st.stop()
@@ -62,20 +61,15 @@ if not GROQ_API_KEY:
 # ----------------------------
 # LLM
 # ----------------------------
-llm = ChatGroq(
-    api_key=GROQ_API_KEY,
-    model_name="llama-3.1-8b-instant"
-)
+llm = ChatGroq(api_key=GROQ_API_KEY, model_name="llama-3.1-8b-instant")
 
 # ----------------------------
 # SESSION STATE
 # ----------------------------
 if "vector_db" not in st.session_state:
     st.session_state.vector_db = None
-
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = []
-
 if "sources" not in st.session_state:
     st.session_state.sources = []
 
@@ -90,7 +84,7 @@ uploaded_files = st.file_uploader(
 )
 
 # ----------------------------
-# PROCESS PDF (SAFE)
+# PROCESS PDF
 # ----------------------------
 if uploaded_files and st.session_state.vector_db is None:
 
@@ -114,11 +108,9 @@ if uploaded_files and st.session_state.vector_db is None:
 
             loader = PyPDFLoader(tmp_path)
             loaded_docs = loader.load()
-
             if not loaded_docs:
                 st.warning(f"⚠️ No readable content in: {file.name}")
                 continue
-
             docs.extend(loaded_docs)
 
         except Exception as e:
@@ -130,16 +122,13 @@ if uploaded_files and st.session_state.vector_db is None:
 
     st.success(f"✅ Loaded: {', '.join(names)}")
 
-    splitter = RecursiveCharacterTextSplitter(
-        chunk_size=500,
-        chunk_overlap=50
-    )
-
+    splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=50)
     split_docs = splitter.split_documents(docs)
 
     embeddings = FakeEmbeddings(size=384)
-
     persist_dir = "chroma_db"
+
+    # Clear old DB
     if os.path.exists(persist_dir):
         shutil.rmtree(persist_dir)
 
@@ -148,12 +137,11 @@ if uploaded_files and st.session_state.vector_db is None:
         embedding=embeddings,
         persist_directory=persist_dir
     )
-
     st.session_state.vector_db = vector_db
     st.success("✅ PDF processed successfully!")
 
 # ----------------------------
-# OPTIONS
+# SIDEBAR OPTIONS
 # ----------------------------
 use_web = st.sidebar.checkbox("🌐 Enable Web Search")
 
@@ -167,10 +155,13 @@ for role, msg in st.session_state.chat_history:
         st.markdown(f"<div class='chat-bot'>🤖 {msg}</div>", unsafe_allow_html=True)
 
 # ----------------------------
-# USER INPUT & HANDLE QUERY
+# USER INPUT
 # ----------------------------
 query = st.chat_input("Ask something...")
 
+# ----------------------------
+# HANDLE QUERY
+# ----------------------------
 if query:
     st.session_state.chat_history.append(("user", query))
 
@@ -182,13 +173,12 @@ if query:
         try:
             retriever = st.session_state.vector_db.as_retriever(search_kwargs={"k": 3})
             docs = retriever.get_relevant_documents(query)
-
             for d in docs:
                 sources.append(d.page_content[:200])
 
             qa = RetrievalQA.from_chain_type(llm=llm, retriever=retriever)
-            pdf_result = qa.run(query)
-            response += f"📄 {pdf_result}\n\n"
+            result = qa.run(query)
+            response += f"📄 {result}\n\n"
         except Exception as e:
             response += f"PDF Error: {str(e)}\n"
 
@@ -199,28 +189,24 @@ if query:
             with DDGS() as ddgs:
                 for r in ddgs.text(query, max_results=3):
                     results.append(f"🔹 {r['title']}\n{r['body']}")
-            if results:
-                response += f"🌐 {'\n'.join(results)}"
+            web_result = "\n".join(results)
+            response += "🌐 " + web_result
         except Exception as e:
-            response += f"Web Error: {str(e)}\n"
+            response += f"Web Error: {str(e)}"
 
     if not response:
         response = "⚠️ No results found."
+
+    st.session_state.chat_history.append(("bot", response))
+    st.session_state.sources = sources
 
     # STREAM RESPONSE
     placeholder = st.empty()
     temp = ""
     for ch in response:
         temp += ch
-        placeholder.markdown(
-            f"<div class='chat-bot'>🤖 {temp}</div>",
-            unsafe_allow_html=True
-        )
+        placeholder.markdown(f"<div class='chat-bot'>🤖 {temp}</div>", unsafe_allow_html=True)
         time.sleep(0.003)
-
-    # Save bot response
-    st.session_state.chat_history.append(("bot", response))
-    st.session_state.sources = sources
 
 # ----------------------------
 # SHOW SOURCES
