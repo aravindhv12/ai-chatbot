@@ -1,5 +1,5 @@
 # ----------------------------
-# FIX TELEMETRY (IMPORTANT)
+# FIX TELEMETRY
 # ----------------------------
 import os
 os.environ["ANONYMIZED_TELEMETRY"] = "False"
@@ -24,11 +24,34 @@ from langchain_community.tools import DuckDuckGoSearchRun
 # ----------------------------
 # PAGE CONFIG
 # ----------------------------
-st.set_page_config(page_title="AI PDF Chatbot", layout="wide")
-st.title("📄 AI PDF + Web Chatbot")
+st.set_page_config(page_title="AI Chatbot", layout="wide")
 
-# Debug
-st.sidebar.title("⚙️ Debug Info")
+# ----------------------------
+# CUSTOM UI (COLORFUL)
+# ----------------------------
+st.markdown("""
+<style>
+.chat-user {
+    background-color: #DCF8C6;
+    padding: 10px;
+    border-radius: 10px;
+    margin: 5px;
+}
+.chat-bot {
+    background-color: #F1F0F0;
+    padding: 10px;
+    border-radius: 10px;
+    margin: 5px;
+}
+</style>
+""", unsafe_allow_html=True)
+
+st.title("🤖 AI PDF + Web Chatbot")
+
+# ----------------------------
+# DEBUG
+# ----------------------------
+st.sidebar.title("⚙️ Debug")
 st.sidebar.code(sys.version)
 
 # ----------------------------
@@ -37,11 +60,11 @@ st.sidebar.code(sys.version)
 GROQ_API_KEY = st.secrets.get("GROQ_API_KEY")
 
 if not GROQ_API_KEY:
-    st.error("❌ Please add GROQ_API_KEY in Streamlit secrets")
+    st.error("Add GROQ_API_KEY in secrets")
     st.stop()
 
 # ----------------------------
-# LLM (WORKING MODEL)
+# LLM
 # ----------------------------
 llm = ChatGroq(
     api_key=GROQ_API_KEY,
@@ -54,111 +77,114 @@ llm = ChatGroq(
 if "vector_db" not in st.session_state:
     st.session_state.vector_db = None
 
+if "chat_history" not in st.session_state:
+    st.session_state.chat_history = []
+
 # ----------------------------
 # FILE UPLOADER
 # ----------------------------
 uploaded_files = st.file_uploader(
-    "Upload PDF files",
+    "📄 Upload PDFs",
     type=["pdf"],
     accept_multiple_files=True,
-    key="pdf_uploader_unique"
+    key="pdf_upload"
 )
 
 # ----------------------------
-# PROCESS PDF (STABLE)
+# PROCESS PDF
 # ----------------------------
 if uploaded_files and st.session_state.vector_db is None:
 
-    documents = []
+    docs = []
 
-    for uploaded_file in uploaded_files:
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_file:
-            tmp_file.write(uploaded_file.read())
-
-            loader = PyPDFLoader(tmp_file.name)
-            docs = loader.load()
-            documents.extend(docs)
-
-    st.success(f"✅ Loaded {len(documents)} pages")
+    for file in uploaded_files:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
+            tmp.write(file.read())
+            loader = PyPDFLoader(tmp.name)
+            docs.extend(loader.load())
 
     splitter = RecursiveCharacterTextSplitter(
         chunk_size=500,
         chunk_overlap=50
     )
 
-    split_docs = splitter.split_documents(documents)
+    split_docs = splitter.split_documents(docs)
 
-    # Lightweight embeddings (no dependency issues)
     embeddings = FakeEmbeddings(size=384)
 
-    # ✅ SAFE RESET (NO CHROMA CRASH)
     persist_dir = "chroma_db"
-
     if os.path.exists(persist_dir):
         shutil.rmtree(persist_dir)
 
-    vector_db = Chroma.from_documents(
+    db = Chroma.from_documents(
         split_docs,
         embedding=embeddings,
         persist_directory=persist_dir
     )
 
-    st.session_state.vector_db = vector_db
-
-    st.success("✅ PDF processed successfully!")
+    st.session_state.vector_db = db
+    st.success("✅ PDF Ready!")
 
 # ----------------------------
 # OPTIONS
 # ----------------------------
-use_web = st.checkbox("🌐 Enable Web Search", key="web_checkbox_unique")
+use_web = st.sidebar.checkbox("🌐 Enable Web", value=False)
 
 # ----------------------------
-# QUERY INPUT
+# CHAT DISPLAY
 # ----------------------------
-query = st.text_input("Ask your question:", key="query_input_unique")
+for chat in st.session_state.chat_history:
+    role, message = chat
+    if role == "user":
+        st.markdown(f"<div class='chat-user'>🧑 {message}</div>", unsafe_allow_html=True)
+    else:
+        st.markdown(f"<div class='chat-bot'>🤖 {message}</div>", unsafe_allow_html=True)
+
+# ----------------------------
+# USER INPUT
+# ----------------------------
+query = st.chat_input("Ask something...")
 
 # ----------------------------
 # HANDLE QUERY
 # ----------------------------
 if query:
-    output = ""
 
-    # ------------------------
-    # PDF ANSWER
-    # ------------------------
-    if st.session_state.vector_db is not None:
+    st.session_state.chat_history.append(("user", query))
+
+    response = ""
+
+    # PDF
+    if st.session_state.vector_db:
         try:
-            qa_chain = RetrievalQA.from_chain_type(
+            qa = RetrievalQA.from_chain_type(
                 llm=llm,
                 retriever=st.session_state.vector_db.as_retriever()
             )
-
-            pdf_answer = qa_chain.run(query)
-
-            if pdf_answer:
-                output += "### 📄 PDF Answer\n" + str(pdf_answer) + "\n\n"
-
+            pdf_ans = qa.run(query)
+            response += f"📄 {pdf_ans}\n\n"
         except Exception as e:
-            st.error("PDF Error: " + str(e))
+            response += f"PDF Error: {e}\n"
 
-    # ------------------------
-    # WEB SEARCH (FIXED)
-    # ------------------------
+    # WEB
     if use_web:
         try:
             search = DuckDuckGoSearchRun()
-            web_result = search.run(query)
-
-            if web_result:
-                output += "### 🌐 Web Results\n" + str(web_result)
-
+            web_ans = search.run(query)
+            response += f"🌐 {web_ans}"
         except Exception as e:
-            st.error("Web Error: " + str(e))
+            response += f"Web Error: {e}"
 
-    # ------------------------
-    # FINAL OUTPUT
-    # ------------------------
-    if output.strip():
-        st.markdown(output)
-    else:
-        st.warning("⚠️ No results found. Upload PDF or enable web search.")
+    if not response:
+        response = "No results found."
+
+    st.session_state.chat_history.append(("bot", response))
+
+    st.rerun()
+
+# ----------------------------
+# CLEAR CHAT
+# ----------------------------
+if st.sidebar.button("🗑️ Clear Chat"):
+    st.session_state.chat_history = []
+    st.rerun()
